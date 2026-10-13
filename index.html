@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Delta Bypass</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', sans-serif; }
+  body {
+    min-height: 100vh;
+    display: flex; align-items: center; justify-content: center;
+    background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+    color: #fff;
+  }
+  .container {
+    background: rgba(255,255,255,0.05);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 16px;
+    padding: 40px;
+    width: 90%;
+    max-width: 500px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    text-align: center;
+  }
+  h1 { font-size: 28px; margin-bottom: 8px;
+    background: linear-gradient(90deg,#00d4ff,#7b2ff7);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  p.sub { color: #aaa; font-size: 14px; margin-bottom: 24px; }
+  input {
+    width: 100%; padding: 14px;
+    border-radius: 10px; border: 1px solid rgba(255,255,255,0.15);
+    background: rgba(0,0,0,0.3); color: #fff; font-size: 15px;
+    margin-bottom: 14px; outline: none;
+  }
+  input:focus { border-color: #7b2ff7; }
+  button {
+    width: 100%; padding: 14px;
+    border: none; border-radius: 10px;
+    background: linear-gradient(90deg,#7b2ff7,#00d4ff);
+    color: #fff; font-size: 16px; font-weight: bold;
+    cursor: pointer; transition: transform 0.15s;
+  }
+  button:hover { transform: scale(1.02); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .result {
+    margin-top: 20px; padding: 14px;
+    background: rgba(0,0,0,0.3); border-radius: 10px;
+    font-family: monospace; font-size: 13px;
+    word-break: break-all; display: none;
+  }
+  .result.show { display: block; }
+  .error { color: #ff5c5c; margin-top: 10px; font-size: 13px; }
+</style>
+</head>
+<body>
+  <div class="container">
+    <h1>Delta Bypass</h1>
+    <p class="sub">キーを入力してbypassリンクを生成</p>
+
+    <input type="text" id="keyInput" placeholder="キーを入力..." />
+    <button id="genBtn">リンク生成</button>
+    <div class="error" id="error"></div>
+
+    <div class="result" id="result"></div>
+  </div>
+
+<script>
+const API = "http://localhost:3000/api/bypass"; // サーバーURL
+
+document.getElementById("genBtn").addEventListener("click", async () => {
+  const key = document.getElementById("keyInput").value.trim();
+  const errEl = document.getElementById("error");
+  const resEl = document.getElementById("result");
+  const btn = document.getElementById("genBtn");
+
+  errEl.textContent = "";
+  resEl.classList.remove("show");
+
+  if (!key) {
+    errEl.textContent = "キーを入力してください";
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = "検証中...";
+
+  try {
+    const res = await fetch(API, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key })
+    });
+    const data = await res.json();
+
+    if (data.success) {
+      resEl.innerHTML = `
+        <div style="color:#00ff9d;margin-bottom:8px;">✅ 認証成功</div>
+        <div>${data.link}</div>
+      `;
+      resEl.classList.add("show");
+    } else {
+      errEl.textContent = data.message || "無効なキーです";
+    }
+  } catch (e) {
+    errEl.textContent = "サーバー接続エラー";
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "リンク生成";
+  }
+});
+</script>
+</body>
+</html>
+
+// server.js
+const express = require("express");
+const cors = require("cors");
+const crypto = require("crypto");
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+// 有効なキーリスト(本来はDB)
+const VALID_KEYS = new Set([
+  "DELTA-TEST-1234",
+  "DELTA-VIP-5678"
+]);
+
+// 使用済みキー
+const USED_KEYS = new Set();
+
+// トークン発行
+function generateToken(key) {
+  const raw = `${key}-${Date.now()}-${crypto.randomBytes(8).toString("hex")}`;
+  return crypto.createHash("sha256").update(raw).digest("hex").slice(0, 32);
+}
+
+app.post("/api/bypass", (req, res) => {
+  const { key } = req.body;
+
+  if (!key) {
+    return res.json({ success: false, message: "キーが必要です" });
+  }
+
+  if (!VALID_KEYS.has(key)) {
+    return res.json({ success: false, message: "無効なキーです" });
+  }
+
+  if (USED_KEYS.has(key)) {
+    return res.json({ success: false, message: "このキーは使用済みです" });
+  }
+
+  // キー消費
+  USED_KEYS.add(key);
+
+  const token = generateToken(key);
+  const link = `https://your-bypass.example.com/getkey?token=${token}`;
+
+  res.json({ success: true, link });
+});
+
+app.listen(3000, () => console.log("Server running on http://localhost:3000"));
+
+npm init -y
+npm install express cors
+node server.js
